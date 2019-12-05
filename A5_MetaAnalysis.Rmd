@@ -1,0 +1,184 @@
+---
+title: "Assignment 5 - Meta-analysis of pitch in schizophrenia"
+author: "Riccardo Fusaroli"
+date: "3/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("readxl")
+pacman::p_load(pacman, tidyverse, tidymodels, groupdata2, lmerTest, lme4, kernlab, dplyr)
+pacman::p_load(goeveg, DescTools, knitr, devtools, tidyr, jtools, ggstance, readxl, metafor, influence.ME)
+```
+
+# Building on the shoulders of giants: meta-analysis
+
+## Questions to be answered
+
+1. What is the current evidence for distinctive vocal patterns in schizophrenia? Report how many papers report quantitative estimates, comment on what percentage of the overall studies reviewed they represent (see PRISMA chart) your method to analyze them, the estimated effect size of the difference (mean effect size and standard error) and forest plots representing it. N.B. Only measures of pitch mean and pitch sd are required for the assignment. Feel free to ignore the rest (although pause behavior looks interesting, if you check my article).
+
+2. Do the results match your own analysis from Assignment 3? If you add your results to the meta-analysis, do the estimated effect sizes change? Report the new estimates and the new forest plots.
+
+3. Assess the quality of the literature: report and comment on heterogeneity of the studies (tau, I2), on publication bias (funnel plot), and on influential studies.
+
+## Tips on the process to follow:
+
+- Download the data on all published articles analyzing voice in schizophrenia and the prisma chart as reference of all articles found and reviewed
+- Look through the dataset to find out which columns to use, and if there is any additional information written as comments (real world data is always messy!).
+    * Hint: PITCH_F0M and PITCH_F0SD group of variables are what you need
+    * Hint: Make sure you read the comments in the columns: `pitch_f0_variability`, `frequency`, `Title`,  `ACOUST_ANA_DESCR`, `DESCRIPTION`, and `COMMENTS`
+- Following the procedure in the slides calculate effect size and standard error of the effect size per each study. N.B. we focus on pitch mean and pitch standard deviation.
+ . first try using lmer (to connect to what you know of mixed effects models)
+ . then use rma() (to get some juicy additional statistics)
+
+- Build a forest plot of the results (forest(model))
+ 
+- Go back to Assignment 3, add your own study to the data table, and re-run meta-analysis. Do the results change?
+
+- Now look at the output of rma() and check tau and I2
+
+```{r setup, include=TRUE}
+data <- readxl::read_xlsx("~/Desktop/Cognitive Science/Cognitive Science 3rd semester/Experimental Methods 3/Afleveringer/Assignment_5/Matrix_MetaAnalysis_Diagnosis_updated290719.xlsx")
+
+data <- data %>%  select(ArticleID, StudyID, Title, Authors, Year_publication, TYPE_OF_TASK, SAMPLE_SIZE_SZ,SAMPLE_SIZE_HC, PITCH_F0_SZ_M, PITCH_F0_HC_M, PITCH_F0_SZ_SD, PITCH_F0_HC_SD,PITCH_F0SD_HC_SD, PITCH_F0SD_SZ_SD, PITCH_F0SD_HC_M, PITCH_F0SD_SZ_M)
+
+# Effect size calculations for pitch variability and mean
+PitchVariabilityES <- escalc('SMD',
+                      n1i = SAMPLE_SIZE_HC,
+                      n2i = SAMPLE_SIZE_SZ,
+                      m1i = PITCH_F0SD_HC_M, 
+                      m2i = PITCH_F0SD_SZ_M,
+                      sd1i = PITCH_F0SD_HC_SD, 
+                      sd2i =PITCH_F0SD_SZ_SD,
+                      data = data)
+
+PitchMeanES <- escalc('SMD',
+                      n1i = SAMPLE_SIZE_HC,
+                      n2i = SAMPLE_SIZE_SZ,
+                      m1i = PITCH_F0_HC_M, 
+                      m2i = PITCH_F0_SZ_M,
+                      sd1i = PITCH_F0_HC_SD, 
+                      sd2i =PITCH_F0_SZ_SD,
+                      data = data)
+
+# Deleting rows with no ES calculations
+PitchVariabilityES <- PitchVariabilityES[is.na(PitchVariabilityES$yi) == F,]
+
+
+PitchMeanES <- PitchMeanES[is.na(PitchMeanES$yi) == F,]
+
+# Calculating sample sizes
+sum(PitchVariabilityES$SAMPLE_SIZE_SZ)
+sum(PitchVariabilityES$SAMPLE_SIZE_HC)
+
+sum(PitchMeanES$SAMPLE_SIZE_SZ)
+sum(PitchMeanES$SAMPLE_SIZE_HC)
+
+# Pitch vairability models
+model_sd <- lmerTest::lmer(yi ~ 1 + (1 | StudyID), PitchVariabilityES, weights = 1/vi, REML=F, control = lme4::lmerControl( check.nobs.vs.nlev ='ignore', check.nobs.vs.nRE = 'ignore'))
+summary(model_sd)
+
+# RMA models contain tay, I^2 and Cochran's Q
+model_sd_rma <- rma(yi, vi, data = PitchVariabilityES, slab=StudyID)
+summary(model_sd_rma)
+forest(model_sd_rma)
+
+# Mean pitch models
+model_mean <- lmerTest::lmer(yi ~ 1 + (1 | StudyID), PitchMeanES, weights = 1/vi, REML=F, control = lme4::lmerControl( check.nobs.vs.nlev ='ignore', check.nobs.vs.nRE = 'ignore'))
+summary(model_mean)
+
+model_mean_rma <- rma(yi, vi, data = PitchMeanES, slab=StudyID)
+summary(model_mean_rma)
+forest(model_mean_rma)
+
+
+# Influence of seperate studies
+inf_sd <- influence.rma.uni(model_sd_rma)
+plot(inf_sd)
+
+# Making funnels plots
+funnel(model_sd_rma, main = "Random-Effects Model", xlab = "Standardized Mean Difference")
+ranktest(model_sd_rma)
+
+funnel(model_mean_rma, main = "Random-Effects Model", xlab = "Standardized Mean Difference")
+ranktest(model_mean_rma)
+
+# Testing the effect of task type
+PitchVariabilityES_without15$TYPE_OF_TASK <- as.factor(PitchVariabilityES_without15$TYPE_OF_TASK)
+str(PitchVariabilityES_without15)
+
+task_inf<- lmerTest::lmer(yi ~ 0 + TYPE_OF_TASK + (1 | StudyID), PitchVariabilityES_without15, weights = 1/vi, REML=F, control = lme4::lmerControl( check.nobs.vs.nlev ='ignore', check.nobs.vs.nRE = 'ignore'))
+summary(task_inf)
+
+task_inf_rma <- rma(yi, vi, data = PitchVariabilityES_without15, mods = cbind(TYPE_OF_TASK), slab=StudyID)
+summary(task_inf_rma)
+forest(task_inf_rma)
+```
+```{r}
+# Running variability analysis again after excluding study 15
+PitchVariabilityES_without15 <-PitchVariabilityES %>%  filter(as.numeric(PitchVariabilityES$StudyID) != 15)
+
+model_sd_no15<- lmerTest::lmer(yi ~ 1 + (1 | StudyID), PitchVariabilityES_without15, weights = 1/vi, REML=F, control = lme4::lmerControl( check.nobs.vs.nlev ='ignore', check.nobs.vs.nRE = 'ignore'))
+summary(model_sd_no15)
+
+model_sd_rma_no15 <- rma(yi, vi, data = PitchVariabilityES_without15, slab=StudyID)
+summary(model_sd_rma_no15)
+forest(model_sd_rma_no15)
+
+# Funnel plots
+funnel(model_sd_rma_no15, main = "Random-Effects Model", xlab = "Standardized Mean Difference")
+ranktest(model_sd_rma_no15)
+```
+
+
+```{r}
+# Add data from assignment 3
+# adding mean coefficients for models estimating difference in mean pitch
+meanCoefs3 <- t(read_csv("MeanCoefs.csv"))
+meanCoefs3 <- as.data.frame(meanCoefs3) %>% 
+    rename(yi = V1) %>% 
+    rename(vi = V2)
+
+meanCoefs3$vi <- as.numeric(meanCoefs3$vi)^2
+meanCoefs3$yi <- abs(meanCoefs3$yi)
+
+PitchMean3 <- bind_rows(PitchMeanES, meanCoefs3)
+
+# adding mean coefficient for models estimating differences in pitch variability
+varCoefs3 <- t(read_csv("VarCoefs.csv"))
+varCoefs3 <- as.data.frame(varCoefs3) %>% 
+    rename(yi = V1) %>% 
+    rename(vi = V2)
+
+varCoefs3$vi <- as.numeric(varCoefs3$vi)^2
+varCoefs3$yi <- abs(varCoefs3$yi)
+
+PitchVariability3 <- bind_rows(PitchVariabilityES_without15, varCoefs3)
+
+
+# adding a sequence of row to the dataframe
+PitchMean3$StudyID = 1:nrow(PitchMean3)
+PitchVariability3$StudyID = 1:nrow(PitchVariability3)
+
+
+
+# Models containing extra studies for pitch mean
+model_mean3 <- lmerTest::lmer(yi ~ 1 + (1 | StudyID), PitchMean3, weights = 1/vi, REML=F, control = lme4::lmerControl( check.nobs.vs.nlev ='ignore', check.nobs.vs.nRE = 'ignore'))
+summary(model_mean3)
+
+model_mean_rma3 <- rma(yi, vi, data = PitchMean3, slab=StudyID)
+summary(model_mean_rma3)
+forest(model_mean_rma3)
+
+
+# Models containing extra studies for pitch variability
+model_sd3 <- lmerTest::lmer(yi ~ 1 + (1 | StudyID), PitchVariability3, weights = 1/vi, REML=F, control = lme4::lmerControl(check.nobs.vs.nlev ='ignore', check.nobs.vs.nRE = 'ignore'))
+summary(model_sd3)
+
+model_sd_rma3 <- rma(yi, vi, data = PitchVariability3, slab = StudyID)
+summary(model_sd_rma3)
+forest(model_sd_rma3)
+```
+
+        
