@@ -2,7 +2,9 @@
 title: "Assignment 5 - Meta-analysis of pitch in schizophrenia"
 author: "Riccardo Fusaroli"
 date: "3/7/2019"
-output: html_document
+output: 
+  md_document:
+    variant: markdown_github 
 ---
 
 ```{r setup, include=FALSE}
@@ -39,8 +41,10 @@ pacman::p_load(goeveg, DescTools, knitr, devtools, tidyr, jtools, ggstance, read
 - Now look at the output of rma() and check tau and I2
 
 ```{r setup, include=TRUE}
+# Reading data
 data <- readxl::read_xlsx("~/Desktop/Cognitive Science/Cognitive Science 3rd semester/Experimental Methods 3/Afleveringer/Assignment_5/Matrix_MetaAnalysis_Diagnosis_updated290719.xlsx")
 
+# Selecting only relevnt collumns
 data <- data %>%  select(ArticleID, StudyID, Title, Authors, Year_publication, TYPE_OF_TASK, SAMPLE_SIZE_SZ,SAMPLE_SIZE_HC, PITCH_F0_SZ_M, PITCH_F0_HC_M, PITCH_F0_SZ_SD, PITCH_F0_HC_SD,PITCH_F0SD_HC_SD, PITCH_F0SD_SZ_SD, PITCH_F0SD_HC_M, PITCH_F0SD_SZ_M)
 
 # Effect size calculations for pitch variability and mean
@@ -62,11 +66,11 @@ PitchMeanES <- escalc('SMD',
                       sd2i =PITCH_F0_SZ_SD,
                       data = data)
 
+
 # Deleting rows with no ES calculations
 PitchVariabilityES <- PitchVariabilityES[is.na(PitchVariabilityES$yi) == F,]
-
-
 PitchMeanES <- PitchMeanES[is.na(PitchMeanES$yi) == F,]
+
 
 # Calculating sample sizes
 sum(PitchVariabilityES$SAMPLE_SIZE_SZ)
@@ -140,6 +144,7 @@ meanCoefs3 <- as.data.frame(meanCoefs3) %>%
     rename(yi = V1) %>% 
     rename(vi = V2)
 
+# Squaring variance
 meanCoefs3$vi <- as.numeric(meanCoefs3$vi)^2
 meanCoefs3$yi <- abs(meanCoefs3$yi)
 
@@ -151,16 +156,19 @@ varCoefs3 <- as.data.frame(varCoefs3) %>%
     rename(yi = V1) %>% 
     rename(vi = V2)
 
+# Calculating variance
 varCoefs3$vi <- as.numeric(varCoefs3$vi)^2
+
+# Directing effect sizes the same way as meta analysis studies (absolute values)
 varCoefs3$yi <- abs(varCoefs3$yi)
 
+# Binding assignment 3 data to meta analsysis data
 PitchVariability3 <- bind_rows(PitchVariabilityES_without15, varCoefs3)
 
 
 # adding a sequence of row to the dataframe
 PitchMean3$StudyID = 1:nrow(PitchMean3)
 PitchVariability3$StudyID = 1:nrow(PitchVariability3)
-
 
 
 # Models containing extra studies for pitch mean
@@ -179,6 +187,7 @@ summary(model_sd3)
 model_sd_rma3 <- rma(yi, vi, data = PitchVariability3, slab = StudyID)
 summary(model_sd_rma3)
 forest(model_sd_rma3)
+
 ```
 
         
